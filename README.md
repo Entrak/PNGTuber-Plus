@@ -1,96 +1,51 @@
 # PNGTuber-Plus (Entrak Fork)
 
-This repository is a modernization fork of the original PNGTuber-Plus project by kaiakairos.
+This is a maintained fork of PNGTuber-Plus focused on general stability, cleanup, and quality-of-life improvements while keeping the original workflow.
 
 - Original project: https://github.com/kaiakairos/PNGTuber-Plus
 - This fork: https://github.com/Entrak/PNGTuber-Plus
 
-## What This Fork Changes
+## What's Different in This Fork
 
-This fork keeps the original behavior and workflow, while improving project reliability and maintainability.
+- General codebase modernization and cleanup.
+- Improved save/settings reliability with backward compatibility.
+- Better startup/runtime safety and reduced warning noise.
+- Added lightweight smoke-test tooling for validation.
 
-### 1) Save and Settings Modernization
-- Added structured save payloads with schema versioning for safer future migrations.
-- Added backward compatibility for older avatar files and legacy settings formats.
-- Migrated fragile `var_to_str` settings fields (window size and background color) to structured JSON-style data.
+## Requirements
 
-### 2) Runtime Safety Improvements
-- Added null-safety guards around main scene references used during startup/headless paths.
-- Fixed startup-sensitive behavior in sprite setup to reduce initialization issues.
-- Reduced shader warnings by removing unused uniforms/locals.
-
-### 3) Testing and Validation Tooling
-- Added script smoke testing and integration smoke testing support.
-- Added VS Code tasks for quick validation runs.
-- Added automated startup error checks for script compilation/runtime startup failures.
-
-### 4) Quality and Architecture Cleanup
-- Added centralized constants for magic numbers.
-- Improved error handling for save/write paths and file operations.
-- Improved settings serialization helpers and migration behavior.
-
-### 5) Extended Behavior in This Fork
-- Added periodic session auto-save infrastructure (60 second interval).
-- Added configurable costume layer sizing helpers (while preserving compatibility).
-
-## Engine Version
-
-- Recommended: Godot 4.6.x
-- Project compatibility target remains Godot 4.x.
-
-If you use VS Code with `godot-tools`, set your Godot executable path in `.vscode/settings.json`.
+- Godot 4.x (4.6.x recommended).
+- Optional: VS Code + `godot-tools`.
 
 ## Quick Start
 
 1. Clone the repository.
-2. Open the project folder in Godot.
+2. Open the project in Godot.
 3. Run the main scene.
-4. On first launch, the app loads the default avatar automatically.
+4. On first run, a default avatar is loaded automatically.
 
 ## Basic Usage
 
-1. Add PNG parts:
-	- Use the Add button to import sprite images.
-2. Arrange your avatar:
-	- Drag parts into place.
-	- Adjust layering, wobble, blink/talk visibility, and other per-sprite options.
-3. Save your avatar:
-	- Use Save to write a `.pngtp` avatar file.
-4. Load an avatar:
-	- Use Load to reopen a previously saved `.pngtp` file.
-5. Configure app settings:
-	- Open Settings to adjust FPS, background color, filtering, bounce, blink behavior, and costume keys.
+1. Use Add to import PNG parts.
+2. Arrange and tune sprites in edit mode.
+3. Use Save to export an avatar file.
+4. Use Load to reopen an existing avatar.
+5. Use Settings to customize behavior and appearance.
 
-## Session and Persistence Notes
+## Data and Recovery
 
-- Settings are stored in `user://settings.pngtp`.
-- A session recovery save is written periodically to `user://session.pngtp`.
-- Avatar saves use schema-aware serialization and still load older formats.
+- App settings are saved to `user://settings.pngtp`.
+- Session recovery data is saved to `user://session.pngtp`.
 
-## Validation / Smoke Tests
+## Validation
 
-This fork includes smoke tests under `test/`.
-
-From VS Code tasks (recommended):
-- Godot: Script Smoke Test
-- Godot: Headless Startup Smoke
-- Godot: Integration Smoke Test
-
-Or run integration smoke directly:
+Smoke tests are included under `test/` and can be run from VS Code tasks or manually:
 
 ```powershell
 pwsh -NoProfile -ExecutionPolicy Bypass -File "test/integration_smoke.ps1"
 ```
 
-## Repository Hygiene
-
-The `.gitignore` in this fork excludes generated files such as:
-- Godot cache/export folders
-- Generated metadata (`*.uid`)
-- Temporary local logs (`test/*.log`)
-- Temporary local binaries (`*~lib*.dll`)
-
 ## Credits
 
-- Original project and concept: kaiakairos
-- Fork modernization and maintenance: Entrak
+- Original project: kaiakairos
+- Fork maintenance: Entrak
