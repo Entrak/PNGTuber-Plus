@@ -44,14 +44,32 @@ var senseLimit = 0.0
 signal startSpeaking
 signal stopSpeaking
 
-var micResetTime = 180
+var micResetTime = Constants.MIC_RESET_TIMEOUT
 
 var updatePusherNode = null
 
 var rand = RandomNumberGenerator.new()
 
+func _set_chain_enabled(value: bool):
+	if chain != null and chain.has_method("enable"):
+		chain.enable(value)
+
 func _ready():
-	spectrum = AudioServer.get_bus_effect_instance(1, 1)
+	# Validate MIC audio bus exists before attempting to use it
+	var mic_bus_idx = AudioServer.get_bus_index(Constants.MIC_BUS_NAME)
+	if mic_bus_idx == -1:
+		push_error("MIC audio bus not found! Microphone features will be disabled.")
+		pushUpdate("Warning: MIC audio bus missing - microphone disabled")
+		return
+	
+	# Validate spectrum analyzer effect exists on MIC bus
+	var effect_count = AudioServer.get_bus_effect_count(mic_bus_idx)
+	if Constants.SPECTRUM_EFFECT_INDEX >= effect_count:
+		push_error("Spectrum analyzer effect not found on MIC bus at index %d" % Constants.SPECTRUM_EFFECT_INDEX)
+		pushUpdate("Warning: Spectrum analyzer missing - microphone disabled")
+		return
+	
+	spectrum = AudioServer.get_bus_effect_instance(mic_bus_idx, Constants.SPECTRUM_EFFECT_INDEX)
 	
 	if !Saving.settings.has("useStreamDeck"):
 		Saving.settings["useStreamDeck"] = false
@@ -59,7 +77,7 @@ func _ready():
 	if Saving.settings.has("secondsToMicReset"):
 		Global.micResetTime = Saving.settings["secondsToMicReset"]
 	else:
-		Saving.settings["secondsToMicReset"] = 180
+		Saving.settings["secondsToMicReset"] = Constants.MIC_RESET_TIMEOUT
 		
 	createMicrophone()
 
@@ -68,7 +86,7 @@ func createMicrophone():
 	var mic = AudioStreamMicrophone.new()
 	playa.stream = mic
 	playa.autoplay = true
-	playa.bus = "MIC"
+	playa.bus = Constants.MIC_BUS_NAME
 	add_child(playa)
 	currentMicrophone = playa
 	await get_tree().create_timer(micResetTime).timeout
@@ -76,7 +94,7 @@ func createMicrophone():
 		return
 	deleteAllMics()
 	currentMicrophone = null
-	await get_tree().create_timer(0.25).timeout
+	await get_tree().create_timer(Constants.MIC_RESTART_DELAY).timeout
 	createMicrophone()
 
 func deleteAllMics():
@@ -86,6 +104,11 @@ func deleteAllMics():
 
 func _process(delta):
 	animationTick += 1
+	# Safety check: only update volume if spectrum analyzer is available
+	if spectrum == null:
+		volume = 0.0
+		return
+	
 	
 	volume = spectrum.get_magnitude_for_frequency_range(20, 20000).length()
 	if currentMicrophone != null:
@@ -115,13 +138,23 @@ func _process(delta):
 		if main.editMode:
 			if Input.is_action_just_pressed("reparent"):
 				reparentMode = !reparentMode
-				Global.chain.enable(reparentMode)
+				_set_chain_enabled(reparentMode)
+				if reparentMode:
+					pushUpdate("Linking mode active. Press ESC or right-click to cancel.")
+			
+			# Allow ESC or right-click to cancel reparent mode
+			if reparentMode:
+				if Input.is_action_just_pressed("ui_cancel") or Input.is_action_just_pressed("right_click"):
+					reparentMode = false
+					_set_chain_enabled(reparentMode)
+					pushUpdate("Linking mode cancelled.")
+					main.emit_signal("input_operation_cancelled")
 				
 	else:
 		reparentMode = false
-		Global.chain.enable(reparentMode)
+		_set_chain_enabled(reparentMode)
 	
-	if main.editMode:
+	if main != null and main.editMode:
 		if reparentMode:
 			RenderingServer.set_default_clear_color(Color.POWDER_BLUE)
 		else:
@@ -132,7 +165,7 @@ func _process(delta):
 	scrollSprites()
 	
 	
-	if !main.fileSystemOpen:
+	if main != null and !main.fileSystemOpen:
 	
 		if Input.is_action_just_pressed("refresh"):
 			refresh()
@@ -150,7 +183,7 @@ func select(areas):
 		return
 	
 	for area in areas:
-		if area.is_in_group("penis"):
+		if area.is_in_group("ui_interaction_blocker"):
 			return
 	
 	var prevSpr = heldSprite
@@ -224,6 +257,8 @@ func linkSprite(sprite,newParent):
 	newParent.set_physics_process(true)
 
 func scrollSprites():
+	if main == null:
+		return
 	
 	if Input.is_action_pressed("control"):
 		return
@@ -235,7 +270,7 @@ func scrollSprites():
 		return
 	
 	for area in mouse.area.get_overlapping_areas():
-		if area.is_in_group("penis"):
+		if area.is_in_group("ui_interaction_blocker"):
 			return
 	
 	var scroll = 0

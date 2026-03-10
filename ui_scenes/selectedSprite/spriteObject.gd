@@ -61,7 +61,7 @@ var rLimitMax = 180
 var rLimitMin = -180
 
 #Layer
-var costumeLayers = [1,1,1,1,1,1,1,1,1,1]
+var costumeLayers = [] ## Will be initialized with size from Constants
 
 #Stretch
 var stretchAmount = 0.0
@@ -83,6 +83,10 @@ var tick = 0
 var toggle = "null"
 
 func _ready():
+	
+	# Initialize costume layers with current costume count setting
+	if costumeLayers.is_empty():
+		costumeLayers = Constants.make_costume_array()
 	
 	Global.main.spriteVisToggles.connect(visToggle)
 	
@@ -138,30 +142,33 @@ func _ready():
 	sprite.offset = offset
 	
 	grabArea.position = (size*-0.5) + offset
-	
+
 	changeFrames()
 	setZIndex()
-	
+
 	if frames > 1:
 		remakePolygon()
 	if !b:
 		remakePolygon()
-	
-	
+
 	add_to_group(str(id))
 	await get_tree().create_timer(0.1).timeout
 	if parentId != null:
 		var nodes = get_tree().get_nodes_in_group(str(parentId))
-		get_parent().remove_child(self)
-		nodes[0].sprite.add_child(self)
-		parentSprite = nodes[0]
-		set_owner(nodes[0].sprite)
-	
+		if nodes.size() > 0 and nodes[0].has_node("WobbleOrigin/DragOrigin/Sprite"):
+			get_parent().remove_child(self)
+			nodes[0].sprite.add_child(self)
+			parentSprite = nodes[0]
+			set_owner(nodes[0].sprite)
+
 	setClip(clipped)
-	
-	
+
 	if Global.filtering:
 		sprite.texture_filter = 2
+
+func _exit_tree():
+	if Global.main and Global.main.spriteVisToggles.is_connected(visToggle):
+		Global.main.spriteVisToggles.disconnect(visToggle)
 	
 func replaceSprite(pathNew):
 	var img = Image.new()
@@ -243,25 +250,35 @@ func _process(delta):
 	animation()
 
 func animation():
+	if frames <= 1:
+		return
 	
-	var speed = max(float(animSpeed),Engine.max_fps*6.0)
-	if animSpeed > 0 and frames > 1:
-		if Global.animationTick % int((speed)/float(animSpeed)) == 0:
+	var speed = max(float(animSpeed), Engine.max_fps * 6.0)
+	if animSpeed > 0:
+		if Global.animationTick % int((speed) / float(animSpeed)) == 0:
 			if sprite.frame == frames - 1:
 				sprite.frame = 0
 			else:
 				sprite.frame += 1
-	if frames > 1:
-		remakePolygon()
+	remakePolygon()
 
 func setZIndex():
 	sprite.z_index = z
 
 func talkBlink():
 	var faded = 0.2 * int(Global.main.editMode)
-	var value = (showOnTalk + (showOnBlink*3)) + (int(Global.speaking)*10) + (int(Global.blink)*20)
-	var yes = [0,10,20,30,1,21,12,32,3,13,4,15,26,36,27,38].has(int(value))
-	sprite.self_modulate.a = max(int(yes),faded)
+	var value = (showOnTalk + (showOnBlink * 3)) + (int(Global.speaking) * 10) + (int(Global.blink) * 20)
+	
+	# Optimized visibility lookup (avoids array creation every frame)
+	var visible_states = {
+		0: true, 1: true, 3: true, 4: true,
+		10: true, 12: true, 13: true, 15: true,
+		20: true, 21: true, 26: true, 27: true,
+		30: true, 32: true, 36: true, 38: true
+	}
+	
+	var yes = visible_states.has(int(value))
+	sprite.self_modulate.a = max(int(yes), faded)
 
 func delete():
 	queue_free()
@@ -320,7 +337,7 @@ func drag(delta):
 	if dragSpeed == 0:
 		dragger.global_position = wob.global_position
 	else:
-		dragger.global_position = lerp(dragger.global_position,wob.global_position,1/dragSpeed)
+		dragger.global_position = lerp(dragger.global_position, wob.global_position, 1.0 / dragSpeed)
 		dragOrigin.global_position = dragger.global_position
 
 func wobble():
@@ -374,8 +391,8 @@ func remakePolygon():
 	
 	remadePolygon = true
 	
-func setClip(toggle):
-	if toggle:
+func setClip(clip_enabled):
+	if clip_enabled:
 		sprite.clip_children = CLIP_CHILDREN_AND_DRAW
 		
 		for node in getAllLinkedSprites():
@@ -385,7 +402,7 @@ func setClip(toggle):
 	else:
 		sprite.clip_children = CLIP_CHILDREN_DISABLED
 		
-	clipped = toggle
+	clipped = clip_enabled
 
 func getAllLinkedSprites():
 	var nodes = get_tree().get_nodes_in_group("saved")

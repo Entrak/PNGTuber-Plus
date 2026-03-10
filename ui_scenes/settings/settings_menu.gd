@@ -42,14 +42,14 @@ func _on_color_picker_button_color_changed(color):
 	get_viewport().transparent_bg = false
 	RenderingServer.set_default_clear_color(color)
 	Global.backgroundColor = color
-	Saving.settings["backgroundColor"] = var_to_str(color)
+	Saving.settings["backgroundColor"] = Saving.color_to_data(color)
 	
 	Global.pushUpdate("Background color set to CUSTOM COLOR.")
 
 func _on_button_pressed():
 	get_viewport().transparent_bg = true
 	Global.backgroundColor = Color(0.0,0.0,0.0,0.0)
-	Saving.settings["backgroundColor"] = var_to_str(Color(0.0,0.0,0.0,0.0))
+	Saving.settings["backgroundColor"] = Saving.color_to_data(Color(0.0,0.0,0.0,0.0))
 	
 	Global.pushUpdate("Background color set to TRANSPARENT.")
 
@@ -78,7 +78,7 @@ func _on_confirm_pressed():
 func _on_green_button_pressed():
 	get_viewport().transparent_bg = false
 	Global.backgroundColor = Color(0.0,1.0,0.0,1.0)
-	Saving.settings["backgroundColor"] = var_to_str(Color(0.0,1.0,0.0,1.0))
+	Saving.settings["backgroundColor"] = Saving.color_to_data(Color(0.0,1.0,0.0,1.0))
 	RenderingServer.set_default_clear_color(Color(0.0,1.0,0.0,1.0))
 	
 	Global.pushUpdate("Background color set to GREEN.")
@@ -86,7 +86,7 @@ func _on_green_button_pressed():
 func _on_blue_button_pressed():
 	get_viewport().transparent_bg = false
 	Global.backgroundColor = Color(0.0,0.0,1.0,1.0)
-	Saving.settings["backgroundColor"] = var_to_str(Color(0.0,0.0,1.0,1.0))
+	Saving.settings["backgroundColor"] = Saving.color_to_data(Color(0.0,0.0,1.0,1.0))
 	RenderingServer.set_default_clear_color(Color(0.0,0.0,1.0,1.0))
 	
 	Global.pushUpdate("Background color set to BLUE.")
@@ -94,7 +94,7 @@ func _on_blue_button_pressed():
 func _on_magenta_button_pressed():
 	get_viewport().transparent_bg = false
 	Global.backgroundColor = Color(1.0,0.0,1.0,1.0)
-	Saving.settings["backgroundColor"] = var_to_str(Color(1.0,0.0,1.0,1.0))
+	Saving.settings["backgroundColor"] = Saving.color_to_data(Color(1.0,0.0,1.0,1.0))
 	RenderingServer.set_default_clear_color(Color(1.0,0.0,1.0,1.0))
 	
 	Global.pushUpdate("Background color set to MAGENTA.")

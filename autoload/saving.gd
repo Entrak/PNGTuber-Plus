@@ -1,5 +1,7 @@
 extends Node
 
+const SAVE_SCHEMA_VERSION = 2
+
 var key = "creature"
 
 var data = {}
@@ -45,18 +47,20 @@ var settings = {
 	"lastAvatar":"",
 	"volume":0.185,
 	"sense":0.25,
-	"windowSize":Vector2i(1280,720),
+	"windowSize":{"x": 1280, "y": 720},
 	"useStreamDeck":false,
 	"bounce":250,
 	"gravity":1000,
 	"maxFPS":60,
 	"secondsToMicReset":180,
-	"backgroundColor":var_to_str(Color(0.0,0.0,0.0,0.0)),
+	"backgroundColor":{"r": 0.0, "g": 0.0, "b": 0.0, "a": 0.0},
 	"filtering":false,
 	"costumeKeys":["1","2","3","4","5","6","7","8","9","0"],
 	"blinkSpeed":1.0,
 	"blinkChance":200,
 	"bounceOnCostumeChange":false,
+	"lastBrowseDir":"",
+	"costumes_count":10,
 }
 
 var settingsPath = "user://settings.pngtp"
@@ -67,9 +71,89 @@ func _ready():
 		return
 	else:
 		settings = datas.duplicate()
+		_migrate_settings(settings)
 
 func _exit_tree():
 	write_settings(settingsPath)
+
+
+func _migrate_settings(settings_dict: Dictionary) -> void:
+	# Migrate backgroundColor from var_to_str format to structured format
+	if settings_dict.has("backgroundColor"):
+		var bg = settings_dict["backgroundColor"]
+		if bg is String:
+			# Old format: var_to_str(Color)
+			var legacy_color = str_to_var(bg)
+			if legacy_color is Color:
+				settings_dict["backgroundColor"] = color_to_data(legacy_color)
+		elif bg is not Dictionary:
+			# Fallback to default if not recognized
+			settings_dict["backgroundColor"] = color_to_data(Color(0.0, 0.0, 0.0, 0.0))
+	
+	# Migrate windowSize from var_to_str format to structured format
+	if settings_dict.has("windowSize"):
+		var size = settings_dict["windowSize"]
+		if size is String:
+			# Old format: var_to_str(Vector2i)
+			var legacy_size = str_to_var(size)
+			if legacy_size is Vector2i or legacy_size is Vector2:
+				settings_dict["windowSize"] = vector2i_to_data(Vector2i(legacy_size))
+		elif size is not Dictionary:
+			# Fallback to default if not recognized
+			settings_dict["windowSize"] = vector2i_to_data(Vector2i(1280, 720))
+
+
+func vector2_to_data(value: Vector2) -> Dictionary:
+	return {"x": value.x, "y": value.y}
+
+
+func data_to_vector2(raw, fallback: Vector2 = Vector2.ZERO) -> Vector2:
+	if raw is Dictionary and raw.has("x") and raw.has("y"):
+		return Vector2(float(raw["x"]), float(raw["y"]))
+	return fallback
+
+
+func vector2i_to_data(value: Vector2i) -> Dictionary:
+	return {"x": value.x, "y": value.y}
+
+
+func data_to_vector2i(raw, fallback: Vector2i = Vector2i.ZERO) -> Vector2i:
+	if raw is Dictionary and raw.has("x") and raw.has("y"):
+		return Vector2i(int(raw["x"]), int(raw["y"]))
+	# Fallback to legacy var_to_str format for backward compatibility
+	if raw is String:
+		var legacy = str_to_var(raw)
+		if legacy is Vector2i or legacy is Vector2:
+			return Vector2i(legacy)
+	return fallback
+
+
+func color_to_data(value: Color) -> Dictionary:
+	return {"r": value.r, "g": value.g, "b": value.b, "a": value.a}
+
+
+func data_to_color(raw, fallback: Color = Color(0.0, 0.0, 0.0, 0.0)) -> Color:
+	if raw is Dictionary and raw.has("r") and raw.has("g") and raw.has("b") and raw.has("a"):
+		return Color(float(raw["r"]), float(raw["g"]), float(raw["b"]), float(raw["a"]))
+	# Fallback to legacy var_to_str format for backward compatibility
+	if raw is String:
+		var legacy = str_to_var(raw)
+		if legacy is Color:
+			return legacy
+	return fallback
+
+
+func _pack_save_payload(sprites: Dictionary) -> Dictionary:
+	return {
+		"schema_version": SAVE_SCHEMA_VERSION,
+		"sprites": sprites,
+	}
+
+
+func _unpack_save_payload(raw):
+	if raw is Dictionary and raw.has("schema_version") and raw.has("sprites") and raw["sprites"] is Dictionary:
+		return raw["sprites"]
+	return raw
 
 
 func read_save(path):
@@ -81,7 +165,7 @@ func read_save(path):
 	if OS.has_feature('web'):
 		var JSONstr = JavaScriptBridge.eval("window.localStorage.getItem('" + key + "');")
 		if (JSONstr):
-			return JSON.parse_string(JSONstr)
+			return _unpack_save_payload(JSON.parse_string(JSONstr))
 		else:
 			return null
 	else:
@@ -90,20 +174,39 @@ func read_save(path):
 			return null
 		var newData = JSON.parse_string(file.get_as_text())
 		file.close()
-		return newData
+		return _unpack_save_payload(newData)
 
 func write_save(path):
+	var payload = data
+	if payload is Dictionary and !payload.has("schema_version"):
+		payload = _pack_save_payload(payload)
+
 	if OS.has_feature('web'):
-		JavaScriptBridge.eval("window.localStorage.setItem('" + key + "', '" + JSON.stringify(data) + "');")
+		JavaScriptBridge.eval("window.localStorage.setItem('" + key + "', '" + JSON.stringify(payload) + "');")
+		return true
 	else:
 		var file = FileAccess.open(path, FileAccess.WRITE)
-		file.store_line(JSON.stringify(data))
+		if file == null:
+			var error = FileAccess.get_open_error()
+			push_error("Failed to open file for writing: %s (Error: %s)" % [path, error])
+			if Global and Global.main:
+				Global.pushUpdate("Error saving file: " + error_string(error))
+			return false
+		file.store_line(JSON.stringify(payload))
 		file.close()
+		return true
 
 func write_settings(path):
 	var file = FileAccess.open(path, FileAccess.WRITE)
+	if file == null:
+		var error = FileAccess.get_open_error()
+		push_error("Failed to open settings file for writing: %s (Error: %s)" % [path, error])
+		if Global and Global.main:
+			Global.pushUpdate("Error saving settings: " + error_string(error))
+		return false
 	file.store_line(JSON.stringify(settings))
 	file.close()
+	return true
 
 
 func clearSave():

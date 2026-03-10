@@ -1,0 +1,57 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Godot: Headless Startup Smoke",
+      "type": "shell",
+      "command": "E:/Tools/Godot_v4.6.1-stable_win64.exe/Godot_v4.6.1-stable_win64.exe",
+      "args": [
+        "--headless",
+        "--path",
+        "${workspaceFolder}",
+        "--quit-after",
+        "2"
+      ],
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Godot: Script Smoke Test",
+      "type": "shell",
+      "command": "E:/Tools/Godot_v4.6.1-stable_win64.exe/Godot_v4.6.1-stable_win64.exe",
+      "args": [
+        "--headless",
+        "--path",
+        "${workspaceFolder}",
+        "-s",
+        "res://test/smoke_headless.gd"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "Godot: Integration Smoke Test",
+      "type": "shell",
+      "command": "pwsh",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}/test/integration_smoke.ps1"
+      ],
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Godot: Run Project",
+      "type": "shell",
+      "command": "E:/Tools/Godot_v4.6.1-stable_win64.exe/Godot_v4.6.1-stable_win64.exe",
+      "args": [
+        "--path",
+        "${workspaceFolder}"
+      ],
+      "group": "build",
+      "problemMatcher": []
+    }
+  ]
+}

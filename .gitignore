@@ -3,3 +3,14 @@
 .export/
 .itchio/
 .steam/
+
+# Generated metadata and temporary build artifacts
+*.uid
+*~lib*.dll
+
+# Local test logs
+test/*.log
+
+# OS/editor noise
+.DS_Store
+Thumbs.db

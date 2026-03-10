@@ -33,8 +33,8 @@ var saveLoaded = false
 
 #Motion
 var yVel = 0
-var bounceSlider = 250
-var bounceGravity = 1000
+var bounceSlider = Constants.DEFAULT_BOUNCE_FORCE
+var bounceGravity = Constants.DEFAULT_GRAVITY
 
 #Costumes
 var costume = 1
@@ -48,12 +48,35 @@ var bounceChange = 0.0
 #IMPORTANT
 var fileSystemOpen = false
 
+#Session Recovery - Auto-save
+const AUTO_SAVE_INTERVAL = 60.0  ## Auto-save every 60 seconds
+const SESSION_SAVE_PATH = "user://session.pngtp"  ## Session recovery save file
+var autoSaveTimer = 0.0  ## Timer for auto-save
+var hasActiveSession = false  ## True if avatar has unsaved changes since last save
+
 #background input capture
 signal emptiedCapture
 signal pressedKey
 var costumeKeys = ["1","2","3","4","5","6","7","8","9","0"]
 signal spriteVisToggles(keysPressed:Array)
-signal fatfuckingballs
+signal input_operation_cancelled
+
+func _init_dialog_paths():
+	var default_dir = OS.get_system_dir(OS.SYSTEM_DIR_PICTURES)
+	if default_dir.is_empty():
+		default_dir = OS.get_system_dir(OS.SYSTEM_DIR_DOCUMENTS)
+	var browse_dir = default_dir
+	if Saving.settings.has("lastBrowseDir") and !str(Saving.settings["lastBrowseDir"]).is_empty():
+		browse_dir = str(Saving.settings["lastBrowseDir"])
+	for dialog in [fileDialog, replaceDialog, saveDialog, loadDialog]:
+		dialog.current_dir = browse_dir
+
+func _remember_browse_dir(path):
+	if path == null:
+		return
+	var dir = str(path).get_base_dir()
+	if !dir.is_empty():
+		Saving.settings["lastBrowseDir"] = dir
 
 func _ready():
 	Global.main = self
@@ -74,12 +97,12 @@ func _ready():
 		$ControlPanel/volumeSlider.value = Saving.settings["volume"]
 		$ControlPanel/sensitiveSlider.value = Saving.settings["sense"]
 		
-		get_window().size = str_to_var(Saving.settings["windowSize"])
+		get_window().size = Saving.data_to_vector2i(Saving.settings["windowSize"], Vector2i(1280, 720))
 		
 		if Saving.settings.has("bounce"):
 			bounceSlider = Saving.settings["bounce"]
 		else:
-			Saving.settings["bounce"] = 250
+			Saving.settings["bounce"] = Constants.DEFAULT_BOUNCE_FORCE
 		
 		if Saving.settings.has("maxFPS"):
 			Engine.max_fps = Saving.settings["maxFPS"]
@@ -87,9 +110,9 @@ func _ready():
 			Saving.settings["maxFPS"] = 60
 		
 		if Saving.settings.has("backgroundColor"):
-			Global.backgroundColor = str_to_var(Saving.settings["backgroundColor"])
+			Global.backgroundColor = Saving.data_to_color(Saving.settings["backgroundColor"], Color(0.0, 0.0, 0.0, 0.0))
 		else:
-			Saving.settings["backgroundColor"] = var_to_str(Color(0.0,0.0,0.0,0.0))
+			Saving.settings["backgroundColor"] = Saving.color_to_data(Color(0.0, 0.0, 0.0, 0.0))
 		
 		if Saving.settings.has("filtering"):
 			Global.filtering = Saving.settings["filtering"]
@@ -99,7 +122,7 @@ func _ready():
 		if Saving.settings.has("gravity"):
 			bounceGravity = Saving.settings["gravity"]
 		else:
-			Saving.settings["gravity"] = 1000
+			Saving.settings["gravity"] = Constants.DEFAULT_GRAVITY
 		
 		if Saving.settings.has("costumeKeys"):
 			costumeKeys = Saving.settings["costumeKeys"]
@@ -125,6 +148,7 @@ func _ready():
 		
 	RenderingServer.set_default_clear_color(Global.backgroundColor)
 	swapMode()
+	_init_dialog_paths()
 	settingsMenu.setvalues()
 	changeCostume(1)
 	
@@ -133,14 +157,21 @@ func _ready():
 	camera.position = origin.position
 	
 func _process(delta):
+	# Auto-save session periodically
+	if saveLoaded and origin.get_child_count() > 0:
+		autoSaveTimer += delta
+		if autoSaveTimer >= AUTO_SAVE_INTERVAL:
+			_auto_save_session()
+			autoSaveTimer = 0.0
+	
 	var hold = origin.get_parent().position.y
 	
-	origin.get_parent().position.y += yVel * 0.0166
+	origin.get_parent().position.y += yVel * Constants.PHYSICS_DELTA
 	if origin.get_parent().position.y > 0:
 		origin.get_parent().position.y = 0
 	bounceChange = hold - origin.get_parent().position.y
 	
-	yVel += bounceGravity*0.0166
+	yVel += bounceGravity * Constants.PHYSICS_DELTA
 	
 	if Input.is_action_just_pressed("openFolder"):
 		OS.shell_open(ProjectSettings.globalize_path("user://"))
@@ -191,7 +222,7 @@ func _notification(what):
 func onWindowSizeChange():
 	if !saveLoaded:
 		return
-	Saving.settings["windowSize"] = var_to_str(get_window().size)
+	Saving.settings["windowSize"] = Saving.vector2i_to_data(get_window().size)
 	var s = get_viewport().get_visible_rect().size
 	origin.position = s*0.5
 	
@@ -205,6 +236,46 @@ func onWindowSizeChange():
 	viewerArrows.position = editControls.position
 	spriteList.position.x = s.x - 233
 	pushUpdates.position.y = controlPanel.position.y
+
+
+func _auto_save_session() -> void:
+	## Automatically save the current session state for recovery
+	if not saveLoaded or origin.get_child_count() == 0:
+		return
+	
+	var data = {}
+	var id = 0
+	for child in origin.get_children():
+		data[id] = {
+			"path": child.path,
+			"identification": child.id,
+			"parentId": child.parentId,
+			"pos_v2": Saving.vector2_to_data(child.position),
+			"offset_v2": Saving.vector2_to_data(child.offset),
+			"zindex": child.z,
+			"drag": child.dragSpeed,
+			"xFrq": child.xFrq,
+			"xAmp": child.xAmp,
+			"yFrq": child.yFrq,
+			"yAmp": child.yAmp,
+			"rotDrag": child.rdragStr,
+			"showTalk": child.showOnTalk,
+			"showBlink": child.showOnBlink,
+			"rLimitMin": child.rLimitMin,
+			"rLimitMax": child.rLimitMax,
+			"costumeLayers_v2": child.costumeLayers.duplicate(),
+			"stretchAmount": child.stretchAmount,
+			"ignoreBounce": child.ignoreBounce,
+			"frames": child.frames,
+			"animSpeed": child.animSpeed,
+			"imageData": child.loadedImageData if child.loadedImageData else "",
+			"clipped": child.clipped,
+			"toggle": child.toggle,
+		}
+		id += 1
+	
+	Saving.data = data
+	Saving.write_save(SESSION_SAVE_PATH)
 	pushUpdates.position.x = editControls.position.x
 
 func zoomScene():
@@ -288,6 +359,7 @@ func _on_add_button_pressed():
 
 #Runs when selecting image in File Dialog
 func _on_file_dialog_file_selected(path):
+	_remember_browse_dir(path)
 	add_image(path)
 
 func _on_save_button_pressed():
@@ -299,6 +371,7 @@ func _on_load_button_pressed():
 
 #LOAD AVATAR
 func _on_load_dialog_file_selected(path):
+	_remember_browse_dir(path)
 	var data = Saving.read_save(path)
 	
 	if data == null:
@@ -315,7 +388,10 @@ func _on_load_dialog_file_selected(path):
 		sprite.id = data[item]["identification"]
 		sprite.parentId = data[item]["parentId"]
 		
-		sprite.offset = str_to_var(data[item]["offset"])
+		if data[item].has("offset_v2"):
+			sprite.offset = Saving.data_to_vector2(data[item]["offset_v2"], Vector2.ZERO)
+		else:
+			sprite.offset = str_to_var(data[item]["offset"])
 		sprite.z = data[item]["zindex"]
 		sprite.dragSpeed = data[item]["drag"]
 		
@@ -334,11 +410,12 @@ func _on_load_dialog_file_selected(path):
 		if data[item].has("rLimitMax"):
 			sprite.rLimitMax = data[item]["rLimitMax"]
 		
-		if data[item].has("costumeLayers"):
-			sprite.costumeLayers = str_to_var(data[item]["costumeLayers"]).duplicate()
-			if sprite.costumeLayers.size() < 8:
-				for i in range(5):
-					sprite.costumeLayers.append(1)
+		if data[item].has("costumeLayers_v2"):
+			sprite.costumeLayers = Constants.resize_costume_array(data[item]["costumeLayers_v2"].duplicate())
+		elif data[item].has("costumeLayers"):
+			sprite.costumeLayers = Constants.resize_costume_array(str_to_var(data[item]["costumeLayers"]).duplicate())
+		else:
+			sprite.costumeLayers = Constants.make_costume_array()
 
 		if data[item].has("stretchAmount"):
 			sprite.stretchAmount = data[item]["stretchAmount"]
@@ -358,7 +435,10 @@ func _on_load_dialog_file_selected(path):
 			sprite.toggle = data[item]["toggle"]
 		
 		origin.add_child(sprite)
-		sprite.position = str_to_var(data[item]["pos"])
+		if data[item].has("pos_v2"):
+			sprite.position = Saving.data_to_vector2(data[item]["pos_v2"], Vector2.ZERO)
+		else:
+			sprite.position = str_to_var(data[item]["pos"])
 	
 	changeCostume(1)
 	Saving.settings["lastAvatar"] = path
@@ -383,8 +463,8 @@ func _on_save_dialog_file_selected(path):
 			data[id]["identification"] = child.id
 			data[id]["parentId"] = child.parentId
 			
-			data[id]["pos"] = var_to_str(child.position)
-			data[id]["offset"] = var_to_str(child.offset)
+			data[id]["pos_v2"] = Saving.vector2_to_data(child.position)
+			data[id]["offset_v2"] = Saving.vector2_to_data(child.offset)
 			data[id]["zindex"] = child.z
 			
 			data[id]["drag"] = child.dragSpeed
@@ -402,7 +482,7 @@ func _on_save_dialog_file_selected(path):
 			data[id]["rLimitMin"] = child.rLimitMin
 			data[id]["rLimitMax"] = child.rLimitMax
 			
-			data[id]["costumeLayers"] = var_to_str(child.costumeLayers)
+			data[id]["costumeLayers_v2"] = child.costumeLayers.duplicate()
 			
 			data[id]["stretchAmount"] = child.stretchAmount
 			
@@ -420,9 +500,11 @@ func _on_save_dialog_file_selected(path):
 	Saving.settings["lastAvatar"] = path
 	
 	Saving.data = data.duplicate()
-	Saving.write_save(path)
-	
-	Global.pushUpdate("Saved avatar at: " + path)
+	if Saving.write_save(path):
+		_remember_browse_dir(path)
+		Global.pushUpdate("Saved avatar at: " + path)
+	else:
+		Global.pushUpdate("Save failed. Check file permissions and path.")
 
 func _on_link_button_pressed():
 	Global.reparentMode = true
@@ -447,6 +529,7 @@ func _on_replace_button_pressed():
 	$ReplaceDialog.visible = true
 
 func _on_replace_dialog_file_selected(path):
+	_remember_browse_dir(path)
 	Global.heldSprite.replaceSprite(path)
 	Global.spriteList.updateData()
 	Global.pushUpdate("Replacing sprite with: " + path)
@@ -535,7 +618,7 @@ func moveSpriteMenu(delta):
 	
 	var size = get_viewport().get_visible_rect().size
 	
-	var windowLength = 1250 #1187
+	var windowLength = Constants.WINDOW_WIDTH_PX
 	
 	$ViewerArrows/Arrows.position.y =  size.y - 25
 	
@@ -628,7 +711,7 @@ func bgInputSprite(node, keys_pressed):
 			keyStrings.append(OS.get_keycode_string(i) if !OS.get_keycode_string(i).strip_edges().is_empty() else "Keycode" + str(i))
 	
 	if keyStrings.size() <= 0:
-		emit_signal("fatfuckingballs")
+		emit_signal("input_operation_cancelled")
 		return
 	
 	spriteVisToggles.emit(keyStrings)
